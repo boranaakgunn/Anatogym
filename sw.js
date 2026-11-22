@@ -1,9 +1,9 @@
 /* Service worker: çevrimdışı çalışma. Siteyi güncelleyince VERSION numarasını artır. */
-var VERSION = "anatogym-v3";
+var VERSION = "anatogym-v4";
 var FILES = [
   "./", "index.html", "style.css", "app.js", "manifest.webmanifest",
   "data/config.js", "data/mannequin.bin", "data/core.js", "data/gogus.js", "data/sirt.js", "data/omuz.js",
-  "data/kol.js", "data/govde.js", "data/bacak.js", "model.js", "model3d.js",
+  "data/kol.js", "data/govde.js", "data/bacak.js", "data/images.js", "model.js", "model3d.js",
   "illu.js", "illu-data.js", "illu-data2.js", "illu-data3.js", "illu-data4.js",
   "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png",
   "icons/apple-touch-icon.png", "icons/favicon-32.png"

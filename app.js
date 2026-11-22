@@ -82,6 +82,13 @@
   /* görsel yüklenemezse (çevrimdışı vb.) kas haritasına dön */
   document.addEventListener("error", function (e) {
     var t = e.target;
+    if (t && t.tagName === "IMG" && t.dataset.ex) {
+      var id = t.dataset.ex, host = t.closest(".photo-pair") || t.closest(".ill"), isPair = !!t.closest(".photo-pair");
+      if (!host) return;
+      if (window.Illu && Illu.has(id)) host.outerHTML = isPair ? Illu.pair(id) : '<div class="ill">' + Illu.thumb(id) + "</div>";
+      else host.outerHTML = fallbackHtml(byId[id].muscle);
+      return;
+    }
     if (!t || t.tagName !== "IMG" || !t.dataset.fb || !t.parentNode) return;
     var m = t.dataset.fb, demo = t.closest(".demo");
     if (demo) {
@@ -155,7 +162,11 @@
       return true;
     });
   }
+  function imgPair(id, name) {
+    return '<img class="f0" src="img/' + id + '-0.jpg" alt="' + esc(name) + '" loading="lazy" data-ex="' + esc(id) + '"><img class="f1" src="img/' + id + '-1.jpg" alt="" loading="lazy" data-ex="' + esc(id) + '">';
+  }
   function thumbHtml(ex) {
+    if (window.EXIMG && EXIMG[ex.id]) return '<div class="ill photo" role="img" aria-label="' + esc(ex.name) + '">' + imgPair(ex.id, ex.name) + "</div>";
     if (window.Illu && Illu.has(ex.id)) return '<div class="ill" role="img" aria-label="' + esc(ex.name) + '">' + Illu.thumb(ex.id) + "</div>";
     return fallbackHtml(ex.muscle);
   }
@@ -179,7 +190,7 @@
   function toggleFav(id) {
     var i = favs.indexOf(id);
     if (i === -1) favs.push(id); else favs.splice(i, 1);
-    save("gym-favs", favs); renderList();
+    save("gym-favs", favs); renderList(); renderHome();
   }
   $("randomBtn").addEventListener("click", function () {
     var l = filtered(); if (!l.length) return;
@@ -193,27 +204,46 @@
     return "<" + tag + (cls ? ' class="' + cls + '"' : "") + ">" + arr.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") + "</" + tag + ">";
   }
   function favBtn(id) { var f = favs.indexOf(id) !== -1; return ic("star") + (f ? " Favoride" : " Favori"); }
+  var exInst = null;
+  var SEC = [["gogus", "gogus"], ["omuz", "omuz"], ["biceps", "biceps"], ["on kol", "onkol"], ["pazu", "biceps"], ["triceps", "triceps"], ["karin", "karin"], ["core", "karin"], ["sirt", "sirt"], ["lat", "sirt"], ["trapez", "trapez"], ["alt sirt", "bel"], ["bel", "bel"], ["kalca", "kalca"], ["gluteal", "kalca"], ["on bacak", "onbacak"], ["quad", "onbacak"], ["arka bacak", "arkabacak"], ["hamstring", "arkabacak"], ["baldir", "baldir"], ["kavrama", "onkol"]];
+  function secKeys(txt, primary) {
+    var t = norm(txt || ""), out = [];
+    SEC.forEach(function (p) { if (t.indexOf(p[0]) !== -1 && p[1] !== primary && out.indexOf(p[1]) === -1) out.push(p[1]); });
+    return out;
+  }
+  function killExModel() { if (exInst) { exInst.destroy(); exInst = null; } }
   function openDetail(id) {
     var ex = byId[id]; if (!ex) return;
+    killExModel();
     var mm = M[ex.muscle], demo;
-    if (window.Illu && Illu.has(id)) demo = '<div class="demo">' + Illu.pair(id) + "</div>";
+    if (window.EXIMG && EXIMG[id]) demo = '<div class="demo"><div class="photo-pair"><figure><img src="img/' + id + '-0.jpg" alt="' + esc(ex.name) + ' başlangıç" data-ex="' + esc(id) + '"><figcaption><b>1</b>Başlangıç</figcaption></figure><span class="illu-arrow">→</span><figure><img src="img/' + id + '-1.jpg" alt="' + esc(ex.name) + ' bitiş" data-ex="' + esc(id) + '"><figcaption><b>2</b>Bitiş</figcaption></figure></div></div>';
+    else if (window.Illu && Illu.has(id)) demo = '<div class="demo">' + Illu.pair(id) + "</div>";
     else demo = '<div class="demo">' + fallbackHtml(ex.muscle) + "</div>";
-    var opts = plan.days.map(function (d) { return '<option value="' + d.id + '">' + esc(d.name) + "</option>"; }).join("");
+    var opts = WK.map(function (w) { var d = dayFor(w); return '<option value="wd' + w + '">' + DAYS[w] + (d ? " · " + esc(d.name) : "") + "</option>"; }).join("");
     detail.style.setProperty("--h", mm.hue);
     detail.innerHTML =
       '<button class="close" aria-label="Kapat">×</button>' + demo + "<h2>" + esc(ex.name) + "</h2>" +
       '<div><span class="tag m">' + esc(mm.label) + '</span><span class="tag">' + esc(EQ[ex.equipment]) + '</span><span class="tag">' + esc(ex.level) + "</span></div>" +
-      (ex.secondary ? '<p class="note">Yardımcı kaslar: ' + esc(ex.secondary) + "</p>" : "") +
+      '<div class="target"><canvas id="exModel" aria-label="Bu hareketin çalıştırdığı kasları gösteren 3D model"></canvas><div class="target-t"><h4>Hangi kaslara vuruyor?</h4>' +
+      '<p><i class="dot main"></i><b>' + esc(mm.label) + '</b> · ana kas</p>' +
+      (ex.secondary ? '<p><i class="dot sec"></i>Yardımcı: ' + esc(ex.secondary) + "</p>" : "") +
+      '<p class="note">Modeli döndürmek için sürükle. Parlak turuncu bölge ana kası, soluk olanlar yardımcı kasları gösterir.</p></div></div>' +
       '<div class="links"><a class="btn small" target="_blank" rel="noopener" href="https://www.youtube.com/results?search_query=' + encodeURIComponent(ex.name + " nasıl yapılır") + '">' + ic("play") + " Video ara</a>" +
       '<a class="btn small ghost" target="_blank" rel="noopener" href="https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(ex.name + " exercise") + '">' + ic("image") + " Görsel ara</a>" +
       '<button class="btn small ghost" data-fav="' + esc(id) + '">' + favBtn(id) + "</button></div>" +
       "<h4>Nasıl yapılır</h4>" + listHtml("ol", ex.steps, "steps") +
       "<h4>İpuçları</h4>" + listHtml("ul", ex.tips, "dots tip") +
       "<h4>Sık yapılan hatalar</h4>" + listHtml("ul", ex.mistakes, "dots warn") +
-      '<h4>Programa ekle</h4><div class="row"><select id="addDaySel" class="field" style="max-width:240px">' + opts + '<option value="__new">+ Yeni gün</option></select>' +
+      '<h4>Programıma ekle</h4><p class="note">Hangi gün yapacaksın?</p><div class="row"><select id="addDaySel" class="field" style="max-width:240px">' + opts + '</select>' +
       '<button class="btn small" data-addplan="' + esc(id) + '">' + ic("plus") + " Ekle</button></div>";
     if (!dlg.open) dlg.showModal();
     dlg.scrollTop = 0;
+    var cv = $("exModel");
+    if (cv && window.AtlasModel && AtlasModel.create) {
+      exInst = AtlasModel.create();
+      exInst.init(cv, null, null, { noLegacy: true, onFail: function () { var t = cv.closest(".target"); if (t) t.hidden = true; } });
+      exInst.highlight(ex.muscle, secKeys(ex.secondary, ex.muscle)); exInst.start();
+    }
   }
   dlg.addEventListener("click", function (e) {
     if (e.target === dlg || e.target.closest(".close")) { dlg.close(); return; }
@@ -222,7 +252,7 @@
     var a = e.target.closest("[data-addplan]");
     if (a) addToPlan($("addDaySel").value, a.dataset.addplan);
   });
-  dlg.addEventListener("close", function () { detail.innerHTML = ""; });
+  dlg.addEventListener("close", function () { killExModel(); detail.innerHTML = ""; });
 
   /* ───────── program ───────── */
   var DAYS = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"];
@@ -278,7 +308,7 @@
   function findDay(id) { for (var i = 0; i < plan.days.length; i++) if (plan.days[i].id === id) return plan.days[i]; return null; }
   function addToPlan(dayId, exId) {
     var d;
-    if (dayId === "__new" || !dayId) { d = { id: uid(), name: "Antrenman " + (plan.days.length + 1), weekday: "", items: [] }; plan.days.push(d); }
+    if (String(dayId).indexOf("wd") === 0) d = ensureDay(+String(dayId).slice(2));
     else d = findDay(dayId);
     if (!d) return;
     d.items.push({ id: exId, sets: 3, reps: "8-12", kg: "" });
@@ -287,7 +317,13 @@
   }
 
   var WK = [1, 2, 3, 4, 5, 6, 0], DS = { 0: "Paz", 1: "Pzt", 2: "Sal", 3: "Çar", 4: "Per", 5: "Cum", 6: "Cmt" };
-  var ui = { pv: load("gym-planview", "week") };
+  var ui = { open: null };
+  function dayFor(w) { for (var i = 0; i < plan.days.length; i++) if (String(plan.days[i].weekday) === String(w)) return plan.days[i]; return null; }
+  function ensureDay(w) {
+    var d = dayFor(w);
+    if (!d) { d = { id: uid(), name: DAYS[w] + " antrenmanı", weekday: String(w), items: [] }; plan.days.push(d); }
+    return d;
+  }
   function dayMuscles(d) {
     var seen = {}, out = [];
     d.items.forEach(function (it) { var e = byId[it.id]; if (e && !seen[e.muscle]) { seen[e.muscle] = 1; out.push(e.muscle); } });
@@ -306,101 +342,102 @@
     var t = TEMPLATES[k], m = META[k] || {};
     if (mode === "replace") plan.days = [];
     t.days.forEach(function (td, i) {
-      plan.days.push({ id: uid(), name: td[0], weekday: m.wd ? String(m.wd[i]) : "", items: td[1].map(function (r) { return { id: r[0], sets: r[1], reps: r[2], kg: "" }; }) });
+      var w = m.wd ? m.wd[i] : "";
+      if (mode === "add" && w !== "") { var old = dayFor(w); if (old) { w = ""; } }
+      plan.days.push({ id: uid(), name: td[0], weekday: String(w), items: td[1].map(function (r) { return { id: r[0], sets: r[1], reps: r[2], kg: "" }; }) });
     });
-    savePlan(); renderPlan(); renderToday(); toast("Program hazır: " + t.name);
+    ui.open = null; savePlan(); renderPlan(); renderToday(); toast("Program hazır: " + t.name);
   }
   function volumeHtml() {
-    var sets = {}, tot = 0;
+    var sets = {};
     plan.days.forEach(function (d) {
       if (d.weekday === "") return;
-      d.items.forEach(function (it) { var e = byId[it.id]; if (!e) return; var n = parseInt(it.sets, 10) || 0; sets[e.muscle] = (sets[e.muscle] || 0) + n; tot += n; });
+      d.items.forEach(function (it) { var e = byId[it.id]; if (!e) return; sets[e.muscle] = (sets[e.muscle] || 0) + (parseInt(it.sets, 10) || 0); });
     });
     var keys = Object.keys(sets).sort(function (a, b) { return sets[b] - sets[a]; });
     if (!keys.length) return "";
-    return '<div class="tool"><h3><span class="t-ic">' + ic("calc") + '</span>Haftalık kas hacmi</h3><p class="note">Haftaya yerleştirdiğin antrenmanlarda her kasa toplam kaç set düşüyor. Genel hedef: büyümek için kas başına haftada yaklaşık 10-20 set. Çok altındaysa kasa yeterli uyarı gitmiyor, çok üstündeyse toparlanma zorlaşır.</p>' +
+    return '<details class="fold"><summary>Haftalık kas hacmi</summary><p class="note">Haftada her kasa toplam kaç set düşüyor. Büyümek için kas başına yaklaşık 10-20 set iyi bir hedeftir.</p>' +
       keys.map(function (k) {
         var n = sets[k], st = n < 6 ? "low" : n > 22 ? "high" : "ok";
         return '<div class="vol ' + st + '"><span class="vol-n">' + esc(M[k].label) + '</span><span class="vol-b"><i style="width:' + Math.min(100, n / 24 * 100) + '%"></i></span><span class="vol-v">' + n + " set</span></div>";
-      }).join("") + "</div>";
+      }).join("") + "</details>";
   }
-  function weekHtml() {
-    var wd = new Date().getDay(), h = '<div class="week">';
-    WK.forEach(function (w) {
-      var ds = plan.days.filter(function (d) { return String(d.weekday) === String(w); });
-      h += '<div class="wk-row' + (w === wd ? " today-r" : "") + '"><div class="wk-d"><b>' + DS[w] + "</b><span>" + DAYS[w] + (w === wd ? " · bugün" : "") + '</span></div><div class="wk-b">';
-      if (!ds.length) h += '<span class="rest">Dinlenme</span>';
-      ds.forEach(function (d) {
-        h += '<div class="wk-card" data-day="' + d.id + '"><div><b>' + esc(d.name) + "</b><small>" + d.items.length + " hareket · " + dayMuscles(d).map(function (m) { return esc(M[m].label); }).join(", ") + "</small></div>" +
-          '<span class="wk-act"><button class="btn small" data-act="start">' + ic("play") + ' Başlat</button><button class="btn small ghost" data-act="edit">Düzenle</button></span></div>';
-      });
-      h += '<button class="link-btn wk-add" data-assign="' + w + '">' + ic("plus") + " Antrenman ata</button></div></div>";
+  function editorHtml(w) {
+    var d = dayFor(w), h = '<div class="ed" data-day="' + (d ? d.id : "") + '" data-wd="' + w + '">';
+    if (!d || (!d.items.length && false)) {
+      return h + '<p class="note">Bu gün dinlenme günü. İstersen antrenman ekle.</p><button class="btn small" data-act="addex" data-wd="' + w + '">' + ic("plus") + " Hareket ekle</button></div>";
+    }
+    h += '<ul class="items">';
+    d.items.forEach(function (it, i) {
+      var ex = byId[it.id]; if (!ex) return;
+      h += '<li class="item" data-idx="' + i + '" style="--h:' + M[ex.muscle].hue + '"><div class="it-name" data-open="' + esc(it.id) + '">' + esc(ex.name) + "<small>" + esc(M[ex.muscle].label) + "</small></div>" +
+        '<div class="it-ctl"><label>Set<input type="number" inputmode="numeric" min="1" data-f="sets" value="' + esc(it.sets) + '"></label>' +
+        '<label>Tekrar<input type="text" data-f="reps" value="' + esc(it.reps) + '"></label>' +
+        '<label>kg<input type="number" inputmode="decimal" step="0.5" min="0" data-f="kg" value="' + esc(it.kg) + '"></label></div>' +
+        '<div class="it-act"><button data-act="up" aria-label="Yukarı">' + ic("up") + '</button><button data-act="down" aria-label="Aşağı">' + ic("down") + '</button><button data-act="rm" aria-label="Sil">' + ic("trash") + "</button></div></li>";
     });
-    return h + "</div>" + volumeHtml();
-  }
-  function daysHtml() {
-    var h = "";
-    plan.days.forEach(function (d) {
-      h += '<section class="day" id="day-' + d.id + '" data-day="' + d.id + '"><div class="day-h"><input class="day-name" data-f="name" value="' + esc(d.name) + '" aria-label="Antrenman adı">' +
-        '<label class="wsel">Hangi gün?<select data-f="weekday" aria-label="Haftanın günü"><option value="">Seçilmedi</option>' +
-        WK.map(function (w) { return '<option value="' + w + '"' + (String(d.weekday) === String(w) ? " selected" : "") + ">" + DAYS[w] + "</option>"; }).join("") +
-        '</select></label></div><ul class="items">';
-      d.items.forEach(function (it, i) {
-        var ex = byId[it.id]; if (!ex) return;
-        h += '<li class="item" data-idx="' + i + '" style="--h:' + M[ex.muscle].hue + '"><div class="it-name" data-open="' + esc(it.id) + '">' + esc(ex.name) + "<small>" + esc(M[ex.muscle].label) + "</small></div>" +
-          '<div class="it-ctl"><label>Set<input type="number" inputmode="numeric" min="1" data-f="sets" value="' + esc(it.sets) + '"></label>' +
-          '<label>Tekrar<input type="text" data-f="reps" value="' + esc(it.reps) + '"></label>' +
-          '<label>kg<input type="number" inputmode="decimal" step="0.5" min="0" data-f="kg" value="' + esc(it.kg) + '"></label></div>' +
-          '<div class="it-act"><button data-act="up" aria-label="Yukarı">' + ic("up") + '</button><button data-act="down" aria-label="Aşağı">' + ic("down") + '</button><button data-act="rm" aria-label="Sil">' + ic("trash") + "</button></div></li>";
-      });
-      h += '</ul><div class="day-f"><button class="btn small ghost" data-act="add">' + ic("plus") + ' Hareket ekle</button>' +
-        '<button class="btn small" data-act="start">' + ic("play") + ' Başlat</button><button class="btn small danger" data-act="delday">Sil</button></div></section>';
-    });
+    h += '</ul><div class="day-f"><button class="btn small ghost" data-act="addex" data-wd="' + w + '">' + ic("plus") + ' Hareket ekle</button>' +
+      (d.items.length ? '<button class="btn small" data-act="start">' + ic("play") + " Başlat</button>" : "") +
+      '<button class="btn small danger" data-act="clear">Günü boşalt</button></div></div>';
     return h;
   }
   function renderPlan() {
-    var h = '<div class="plan-top"><div class="seg" role="tablist"><button data-pv="week" class="' + (ui.pv === "week" ? "on" : "") + '">Haftalık görünüm</button><button data-pv="days" class="' + (ui.pv === "days" ? "on" : "") + '">Antrenmanları düzenle</button></div>' +
-      '<div class="plan-btns"><button class="btn small" data-act="newday">' + ic("plus") + ' Yeni antrenman</button><button class="btn small ghost" data-act="tplopen">Hazır programlar</button></div></div>';
+    var wd = new Date().getDay(), h = "";
+    h += '<p class="lead2">Haftanın her günü için ne çalışacağını belirle. Bir güne dokun, aç, hareketleri ekle ya da düzenle.</p>';
+    h += '<div class="plan-btns"><button class="btn small ghost" data-act="tplopen">Hazır program seç</button></div>';
     if (!plan.days.length) {
-      h += '<div class="intro"><p class="eyebrow">Başlangıç</p><h3>Henüz bir programın yok</h3><p class="note">Aşağıdan hazır bir program seç; günler haftaya otomatik yerleşir ve istediğini sonradan değiştirebilirsin. Ya da yukarıdan "Yeni antrenman" ile sıfırdan kur.</p></div><div class="tpls">' + tplCards() + "</div>";
-    } else h += ui.pv === "week" ? weekHtml() : daysHtml();
+      h += '<div class="intro"><p class="eyebrow">Nereden başlayacağını bilmiyorsan</p><h3>Hazır bir program seç</h3><p class="note">Günler haftaya otomatik yerleşir; sonra hareketleri değiştirebilirsin. Ya da aşağıdan kendi günlerini kur.</p></div><div class="tpls">' + tplCards() + "</div>";
+    }
+    h += '<div class="week">';
+    WK.forEach(function (w) {
+      var d = dayFor(w), open = ui.open === w;
+      h += '<div class="wk-row' + (w === wd ? " today-r" : "") + (open ? " open" : "") + '"><button class="wk-head" data-wk="' + w + '"><span class="wk-d"><b>' + DS[w] + "</b><span>" + (w === wd ? "bugün" : DAYS[w]) + "</span></span>" +
+        '<span class="wk-s">' + (d && d.items.length ? "<b>" + esc(d.name) + "</b><small>" + d.items.length + " hareket · " + dayMuscles(d).map(function (m) { return esc(M[m].label); }).join(", ") + "</small>" : '<em class="rest">Dinlenme</em>') +
+        '</span><span class="chev">' + (open ? "−" : "+") + "</span></button>" + (open ? '<div class="wk-body">' + (d ? '<input class="day-name" data-f="name" value="' + esc(d.name) + '" aria-label="Antrenman adı">' : "") + editorHtml(w) + "</div>" : "") + "</div>";
+    });
+    h += "</div>";
+    var loose = plan.days.filter(function (d) { return d.weekday === "" || d.weekday == null; });
+    if (loose.length) {
+      h += '<div class="tool"><h3>Güne atanmamış antrenmanlar</h3><p class="note">Bunları haftaya yerleştirmek için gün seç:</p>' + loose.map(function (d) {
+        return '<div class="row" data-day="' + d.id + '"><b>' + esc(d.name) + "</b> · " + d.items.length + ' hareket <select data-f="weekday" class="field" style="max-width:150px"><option value="">Gün seç</option>' +
+          WK.map(function (w) { return '<option value="' + w + '">' + DAYS[w] + "</option>"; }).join("") + '</select><button class="btn small danger" data-act="delday">Sil</button></div>';
+      }).join("") + "</div>";
+    }
+    h += volumeHtml();
     if (log.length) {
-      h += '<div class="tool"><h3><span class="t-ic">' + ic("check") + '</span>Son antrenmanlar</h3><ul class="log">' + log.slice(-6).reverse().map(function (l) {
+      h += '<details class="fold"><summary>Son antrenmanlar</summary><ul class="log">' + log.slice(-6).reverse().map(function (l) {
         return "<li>" + esc(l.date) + " · <b>" + esc(l.name) + "</b> · " + l.sets + " set · " + (l.volume / 1000).toFixed(1) + " ton</li>";
-      }).join("") + "</ul></div>";
+      }).join("") + "</ul></details>";
     }
     $("planBody").innerHTML = h;
   }
   $("planBody").addEventListener("change", function (e) {
     var f = e.target.dataset.f; if (!f) return;
-    var dayEl = e.target.closest(".day"); var d = findDay(dayEl.dataset.day); if (!d) return;
+    var dayEl = e.target.closest("[data-day]"); var d = dayEl && findDay(dayEl.dataset.day); if (!d) return;
     var itEl = e.target.closest(".item");
     if (itEl) { d.items[+itEl.dataset.idx][f] = e.target.value; } else d[f] = e.target.value;
-    savePlan(); if (f === "weekday") renderToday();
+    savePlan(); if (f === "weekday") { renderPlan(); renderToday(); } else if (f === "name") renderToday();
   });
   $("planBody").addEventListener("click", function (e) {
-    var pv = e.target.closest("[data-pv]"); if (pv) { ui.pv = pv.dataset.pv; save("gym-planview", ui.pv); renderPlan(); return; }
+    var wk = e.target.closest("[data-wk]"); if (wk) { var w = +wk.dataset.wk; ui.open = ui.open === w ? null : w; renderPlan(); return; }
     var tp = e.target.closest("[data-tpl]"); if (tp) { tplChoose(tp.dataset.tpl); return; }
-    var as = e.target.closest("[data-assign]"); if (as) { openAssign(as.dataset.assign); return; }
     var op = e.target.closest("[data-open]");
     if (op) { openDetail(op.dataset.open); return; }
     var b = e.target.closest("[data-act]"); if (!b) return;
     var act = b.dataset.act;
-    if (act === "newday") { var nd = { id: uid(), name: "Antrenman " + (plan.days.length + 1), weekday: "", items: [] }; plan.days.push(nd); ui.pv = "days"; save("gym-planview", "days"); savePlan(); renderPlan(); var el = $("day-" + nd.id); if (el) el.scrollIntoView({ block: "center" }); return; }
     if (act === "tplopen") { openTpls(); return; }
+    if (act === "addex") { var dd = ensureDay(+b.dataset.wd); savePlan(); openPicker(dd.id); return; }
     var dayEl = b.closest("[data-day]"); if (!dayEl) return;
     var d = findDay(dayEl.dataset.day); if (!d) return;
-    if (act === "edit") { ui.pv = "days"; save("gym-planview", "days"); renderPlan(); var t2 = $("day-" + d.id); if (t2) t2.scrollIntoView({ block: "start" }); return; }
     var itEl = b.closest(".item"), i = itEl ? +itEl.dataset.idx : -1;
     if (act === "rm") d.items.splice(i, 1);
     else if (act === "up" && i > 0) { var x = d.items[i]; d.items[i] = d.items[i - 1]; d.items[i - 1] = x; }
     else if (act === "down" && i < d.items.length - 1) { var y = d.items[i]; d.items[i] = d.items[i + 1]; d.items[i + 1] = y; }
-    else if (act === "delday") { if (!confirm('"' + d.name + '" antrenmanı silinsin mi?')) return; plan.days.splice(plan.days.indexOf(d), 1); }
-    else if (act === "add") { openPicker(d.id); return; }
+    else if (act === "clear" || act === "delday") { if (!confirm('"' + d.name + '" silinsin mi?')) return; plan.days.splice(plan.days.indexOf(d), 1); }
     else if (act === "start") { startWorkout(d.id); return; }
     savePlan(); renderPlan(); renderToday();
   });
-  /* hazır program / gün atama pencereleri */
+  /* hazır programlar penceresi */
   function openTpls() {
     $("pickBody").innerHTML = '<button class="close" aria-label="Kapat">×</button><h2>Hazır programlar</h2><p class="note">Birini seç; antrenman günleri haftaya yerleşir. Sonra tüm hareketleri değiştirebilirsin.</p><div class="tpls">' + tplCards() + "</div>";
     if (!pick.open) pick.showModal(); pick.scrollTop = 0;
@@ -409,14 +446,6 @@
     if (!plan.days.length) { if (pick.open) pick.close(); applyTpl(k, "add"); return; }
     $("pickBody").innerHTML = '<button class="close" aria-label="Kapat">×</button><h2>' + esc(TEMPLATES[k].name) + '</h2><p class="note">Zaten bir programın var. Ne yapalım?</p>' +
       '<div class="choice"><button class="btn" data-tplgo="replace:' + k + '">Mevcut programımı sil, bunu kullan</button><button class="btn ghost" data-tplgo="add:' + k + '">Mevcut programın yanına ekle</button><button class="link-btn" data-tplgo="cancel">Vazgeç</button></div>';
-    if (!pick.open) pick.showModal();
-  }
-  function openAssign(w) {
-    var free = plan.days.filter(function (d) { return String(d.weekday) !== String(w); });
-    $("pickBody").innerHTML = '<button class="close" aria-label="Kapat">×</button><h2>' + DAYS[w] + " günü antrenmanı</h2>" +
-      (free.length ? '<p class="note">Mevcut antrenmanlardan birini bu güne ata:</p><div class="choice">' + free.map(function (d) {
-        return '<button class="btn ghost" data-asg="' + w + ":" + d.id + '">' + esc(d.name) + (d.weekday !== "" ? " (şu an " + DS[d.weekday] + ")" : "") + "</button>";
-      }).join("") + "</div>" : "") + '<div class="choice"><button class="btn" data-asg="' + w + ':__new">+ Yeni antrenman oluştur</button></div>';
     if (!pick.open) pick.showModal();
   }
 
@@ -444,19 +473,33 @@
     var tg = e.target.closest("[data-tplgo]");
     if (tg) { var v = tg.dataset.tplgo; pick.close(); if (v !== "cancel") { var pr = v.split(":"); applyTpl(pr[1], pr[0]); } return; }
     var tc = e.target.closest("[data-tpl]"); if (tc) { tplChoose(tc.dataset.tpl); return; }
-    var ag = e.target.closest("[data-asg]");
-    if (ag) {
-      var q = ag.dataset.asg.split(":"), wd = q[0], did = q[1]; pick.close();
-      if (did === "__new") { var nd = { id: uid(), name: "Antrenman " + (plan.days.length + 1), weekday: wd, items: [] }; plan.days.push(nd); ui.pv = "days"; save("gym-planview", "days"); savePlan(); renderPlan(); renderToday(); var el = $("day-" + nd.id); if (el) el.scrollIntoView({ block: "center" }); toast("Şimdi hareket ekle"); }
-      else { var dd = findDay(did); if (dd) { dd.weekday = wd; savePlan(); renderPlan(); renderToday(); } }
-      return;
-    }
     var p = e.target.closest("[data-pick]");
     if (p) addToPlan(pickDay, p.dataset.pick);
   });
 
   /* bugün kartı (ana sayfa) */
+  function weekStart() { var n = new Date(); n.setHours(0, 0, 0, 0); n.setDate(n.getDate() - ((n.getDay() + 6) % 7)); return n.getTime(); }
+  function renderHome() {
+    var ws = weekStart(), wd = new Date().getDay(), done = {}, cnt = 0;
+    log.forEach(function (l) { if (l.ts && l.ts >= ws) { cnt++; done[new Date(l.ts).getDay()] = 1; } });
+    var h = '<div class="home-sec"><h4>Bu hafta</h4><div class="wkstrip">' + WK.map(function (w) {
+      var d = dayFor(w), st = done[w] ? "done" : (d && d.items.length ? "plan" : "off");
+      return '<button class="wks ' + st + (w === wd ? " now" : "") + '" data-goto="plan"><span>' + DS[w] + "</span><i>" + (done[w] ? "✓" : (d && d.items.length ? "●" : "·")) + "</i></button>";
+    }).join("") + "</div></div>";
+    var total = log.length, planned = plan.days.filter(function (d) { return d.items.length && d.weekday !== ""; }).length;
+    h += '<div class="stats"><div><b>' + cnt + "</b><span>bu hafta yapılan</span></div><div><b>" + planned + "</b><span>haftalık plan günü</span></div><div><b>" + total + "</b><span>toplam antrenman</span></div></div>";
+    var seed = Math.floor(Date.now() / 86400000), ex = LIST[seed % LIST.length], mm = M[ex.muscle];
+    h += '<div class="home-sec"><h4>Günün hareketi</h4><div class="card dayex" data-id="' + esc(ex.id) + '" style="--h:' + mm.hue + '"><div class="thumb">' + thumbHtml(ex) + '</div><div class="card-b"><h3>' + esc(ex.name) + '</h3><span class="tag m">' + esc(mm.label) + '</span><span class="tag">' + esc(EQ[ex.equipment]) + '</span><p class="note">' + esc((ex.steps && ex.steps[0]) || "") + "</p></div></div></div>";
+    var fl = favs.filter(function (i) { return byId[i]; }).slice(0, 6);
+    if (fl.length) h += '<div class="home-sec"><h4>Favorilerin</h4><div class="favrow">' + fl.map(function (i) { var e = byId[i]; return '<button class="chip" data-id="' + esc(i) + '">' + esc(e.name) + "</button>"; }).join("") + "</div></div>";
+    h += '<div class="home-sec"><h4>Nasıl kullanılır?</h4><ol class="steps"><li>Modeli döndür, çalıştırmak istediğin kasa dokun.</li><li>Hareketin fotoğrafına, anlatımına ve hangi kasları çalıştırdığına bak.</li><li>Beğendiğini programına ekle, hangi gün yapacağını seç.</li><li>Antrenmanda "Başlat" ile setlerini ve ağırlıklarını kaydet.</li></ol></div>';
+    $("homeExtra").innerHTML = h;
+  }
+  $("homeExtra").addEventListener("click", function (e) {
+    var c = e.target.closest("[data-id]"); if (c) openDetail(c.dataset.id);
+  });
   function renderToday() {
+    renderHome();
     var wd = new Date().getDay(), d = null;
     plan.days.forEach(function (x) { if (!d && String(x.weekday) === String(wd) && x.items.length) d = x; });
     $("todayCard").innerHTML = d ?
@@ -516,7 +559,7 @@
       if (d && lastKg !== "" && d.items[i]) d.items[i].kg = lastKg;
     });
     if (cnt) {
-      log.push({ date: new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "short" }), name: W.name, sets: cnt, volume: Math.round(vol) });
+      log.push({ ts: Date.now(), date: new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "short" }), name: W.name, sets: cnt, volume: Math.round(vol) });
       log = log.slice(-60); save("gym-log", log); savePlan();
       toast("Antrenman kaydedildi");
     } else toast("Hiç set tamamlanmadı");

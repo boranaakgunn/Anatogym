@@ -5,6 +5,7 @@ Statik site: build gerekmez. Dosyaları GitHub reposunun köküne yükle → Set
 ## Yapı
 - `index.html`, `style.css`, `app.js`: arayüz ve uygulama mantığı
 - `model3d.js` + `data/mannequin.bin`: dönen 3D manken (WebGL, ~35 bin köşe, bölge bazlı kas id). Mesh önceden üretilip ikili dosya olarak gömülüdür; WebGL yoksa `model.js` (basit model) devreye girer.
+- `img/` + `data/images.js`: hareket fotoğrafları (free-exercise-db, kamu malı), her hareket için `<id>-0.jpg` başlangıç ve `<id>-1.jpg` bitiş. Fotoğrafı olmayan hareketlerde aşağıdaki çizimler yedek olarak kullanılır.
 - `illu.js`, `illu-data*.js`: hareket çizimleri (SVG, kodla çizilir, iki anlı: başlangıç / bitiş)
 - `data/*.js`: hareket verileri (kas grubuna göre dosyalar)
 - `sw.js`, `manifest.webmanifest`, `icons/`: PWA / çevrimdışı

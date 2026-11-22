@@ -5,6 +5,7 @@
   "use strict";
   var legacy = window.AtlasModel;
   var MU = window.MUSCLES;
+  function make() {
   var gl, canvas, label, onPick, prog, buf = {}, nIdx = 0, nEdg = 0;
   var pos, nor, col, hot, reg, idx, edg, nv, nt, regKeys;
   var yaw = 0.35, pitch = 0.06, tYaw = null, auto = true, idleT = 0, running = false, raf = 0, light = false;
@@ -54,14 +55,14 @@
     "vec3 k=normalize(vec3(-.45,.6,.7)),f=normalize(vec3(.75,.1,.4)),r=normalize(vec3(.1,.5,-.9));" +
     "float dk=max(dot(n,k),0.),df=max(dot(n,f),0.),dr=max(dot(n,r),0.);" +
     "float hemi=.5+.5*n.y;float ao=smoothstep(-.9,.4,n.y)*.3+.7;" +
-    "vec3 hc=vec3(1.,.33,.17);vec3 base=mix(vC,hc,vH*.7);if(uL>.5)base*=vec3(.93,.83,.70);" +
+    "vec3 hc=vec3(1.,.33,.17);vec3 base=mix(vC,hc,vH*.7);if(uL>.5)base=mix(vec3(.76,.77,.80),base*vec3(.84,.84,.86),.25+vH*.75);" +
     "vec3 amb=uL>.5?mix(vec3(.50,.50,.54),vec3(.80,.80,.84),hemi):mix(vec3(.30,.31,.36),vec3(.62,.64,.72),hemi);" +
     "vec3 c=base*(amb*ao+vec3(1.,.96,.9)*dk*.8+vec3(.6,.66,.85)*df*.28);" +
     "float sp=pow(max(dot(n,normalize(k+V)),0.),38.)*.2;c+=sp;float fr=pow(1.-max(dot(n,V),0.),3.);c+=vec3(.7,.75,1.)*(fr*.18+dr*.1);" +
     "vec3 ao3=abs(normalize(vO));float u2=ao3.z>ao3.x?vP.x:vP.z;" +
     "float g=0.;vec3 lc=uL>.5?vec3(.28,.14,.08):vec3(.05,.06,.1);" +
     "c=mix(c,lc,g*(uL>.5?.5:.34)*(1.+vH*.5));c+=hc*vH*(.1+.08*uT);" +
-    "if(uW>.5)c=c*(uL>.5?.52:.40);gl_FragColor=vec4(c,1.);}";
+    "if(uW>.5)c=c*(uL>.5?.66:.45);gl_FragColor=vec4(c,1.);}";
 
   function sh(t, s) { var o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; }
   function mkbuf(target, data, usage) { var b = gl.createBuffer(); gl.bindBuffer(target, b); gl.bufferData(target, data, usage || gl.STATIC_DRAW); return b; }
@@ -93,6 +94,10 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.h); gl.bufferData(gl.ARRAY_BUFFER, hot, gl.DYNAMIC_DRAW);
   }
 
+  function setHotMap(m) {
+    var i; for (i = 0; i < nv; i++) hot[i] = m[reg[i]] || 0;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.h); gl.bufferData(gl.ARRAY_BUFFER, hot, gl.DYNAMIC_DRAW);
+  }
   function draw() {
     if (!gl) return;
     resize();
@@ -211,11 +216,14 @@
   }
 
   var wantRun = false;
-  function init(c, l, cb) {
-    canvas = c; label = l; onPick = cb;
+  var opts = null, pendingHL = null;
+  function init(c, l, cb, o) {
+    canvas = c; label = l; onPick = cb; opts = o || null;
+    light = document.documentElement.getAttribute('data-theme') !== 'dark';
     reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
     function fallback(err) {
       if (window.console) console.warn("3D model fallback:", err && err.message);
+      if (opts && opts.noLegacy) { if (opts.onFail) opts.onFail(); return; }
       usingLegacy = true; legacy.init(c, l, cb); if (wantRun) legacy.start();
     }
     try {
@@ -223,15 +231,26 @@
         .then(function (ab) {
           setup(ab); bind(); canvas.classList.add("ready");
           window.addEventListener("resize", function () { if (running) draw(); });
-          draw(); if (wantRun) start();
+          draw(); if (pendingHL) { var ph = pendingHL; pendingHL = null; api.highlight(ph[0], ph[1]); } if (wantRun) start();
         }).catch(fallback);
     } catch (err) { fallback(err); }
   }
   function start() { wantRun = true; if (usingLegacy) return legacy.start(); if (running || !gl) return; running = true; idleT = performance.now(); raf = requestAnimationFrame(loop); }
   function stop() { wantRun = false; if (usingLegacy) return legacy.stop(); running = false; cancelAnimationFrame(raf); }
 
-  window.AtlasModel = {
+  var api = {
     init: init, start: start, stop: stop,
+    highlight: function (primary, secondary) {
+      if (usingLegacy) return;
+      if (!gl) { pendingHL = [primary, secondary]; return; }
+      var m = {}, ri = function (k) { return regKeys.indexOf(k); }, i;
+      (secondary || []).forEach(function (k) { if (ri(k) > 0) m[ri(k)] = 0.42; });
+      if (ri(primary) > 0) m[ri(primary)] = 1;
+      setHotMap(m);
+      var v = MU[primary] && MU[primary].view;
+      yaw = v === 'back' ? Math.PI - 0.5 : 0.5; tYaw = null; auto = true; idleT = performance.now(); draw();
+    },
+    destroy: function () { running = false; cancelAnimationFrame(raf); try { var x = gl && gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); } catch (e) { } },
     setTheme: function (isLight) { light = isLight; if (usingLegacy) legacy.setTheme(isLight); else if (gl) draw(); },
     view: function (side) { if (usingLegacy) return; tYaw = side === "back" ? Math.PI : 0; idleT = performance.now(); },
     _test: {
@@ -240,4 +259,9 @@
       legacy: function () { return usingLegacy; }
     }
   };
+  return api;
+  }
+  var main = make();
+  window.AtlasModel = main;
+  window.AtlasModel.create = make;
 })();
